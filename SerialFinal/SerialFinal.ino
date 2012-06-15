@@ -1,19 +1,14 @@
 #include "MediaWall.h"
-#include "Helvetica__10.h"
-#include "Helvetica__11.h"
-#include "Helvetica__12.h"
-#include "Helvetica__14.h"
-#include "Helvetica__16.h"
-#include "Helvetica__18.h"
-#include "Helvetica__22.h"
 #include "Helvetica_World__20.h"
 #include "Helvetica_World__12.h"
-#include "Helvetica_World__24.h"
 
 MediaWall LCD(240,128,6,32, 2);// 240x64 Pixel and 6x8 Font
 
 int incomingByte = 0;	// for incoming serial data
 int mode = 0;
+
+//Pixel
+boolean xIn = true;
 
 //TextBox
 int x1 = 0;
@@ -30,20 +25,18 @@ void emptyBuffer() {
   buffer[0] = 0;
 }
 
+void clearPixels() {
+  for (int i = x1; i < x2; i++) {
+    for (int j = y1; j < y2; j++) {
+      LCD.clearPixel(i, j);
+    }
+  }
+}
+
 void setup(){
   Serial.begin(115200);
-  /*Serial.print("TH: ");
-  Serial.println(LCD.getTH());
-  Serial.print("GH: ");
-  Serial.println(LCD.getGH());*/
-  
-  //Serial.println((int)LCD.checkStatus());
   
   LCD.Initialize();
-  
-  //Serial.println((int)LCD.checkStatus());
-  //LCD1.Initialize();
-  //LCD2.Initialize();
   
   Serial.println("Initialized");
   
@@ -51,18 +44,33 @@ void setup(){
   emptyBuffer();
 }
 
+/*
+241 = reset screen
+
+242 followed by number (1-3) = select screen
+
+243 = textbox information will follow
+After 243 send font, y1, x1, x2, y2, text in that order
+If it's a title or a subtitle we don't need x1, x2, y2
+At the end of a textbox stream send 244
+
+245 = pixels 244 to end stream
+*/
+
 void loop(){
   if (Serial.available() > 0) {
     // read the incoming byte:
     incomingByte = Serial.read();
     if (mode == 0) {
-      if (incomingByte == 241) {
+      if (incomingByte == 241) { // reset
         LCD.clearText();
         LCD.TextGoTo(0,0);
         LCD.clearGraphic();
-      } else if (incomingByte == 243) {
-        mode = 1;
-      } else if (incomingByte == 245) {
+      } else if (incomingByte == 242) { // screen swap
+        mode = 3;
+      } else if (incomingByte == 243) { // text
+        mode = 1; // 244 = end stream
+      } else if (incomingByte == 245) { // pixel
         mode = 2;
       }
     } else if (mode == 1) { // text
@@ -86,6 +94,7 @@ void loop(){
             stage = 0;
             mode = 0;
             textType = 0;
+            //clearPixels();
             LCD.glcd_print1_textbox(x1, y1, x2, y2, buffer, font, 0, 0);
             emptyBuffer();
           } else {
@@ -115,6 +124,30 @@ void loop(){
         }
       }
     } else if (mode == 2) { // pixel
+      if (incomingByte == 244) {
+        mode = 0;
+      }else {
+        if (xIn) {
+          x1 = incomingByte;
+          xIn = false;
+        } else {
+          y1 = incomingByte;
+          LCD.setPixel(x1, y1);
+          xIn = true;
+        }
+      }
+    } else if (mode == 3) { // screen
+      byte screen;
+      if (incomingByte == 1) {
+        screen = 2;
+      } else if (incomingByte == 2) {
+        screen = 4;
+      } else if (incomingByte == 3) {
+        screen = 5;
+      }
+      LCD.setCE(screen);
+      LCD.Initialize();
+      mode = 0;
     }
     Serial.println(incomingByte);
   }
